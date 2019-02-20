@@ -961,12 +961,10 @@ static int ip_error(struct sk_buff *skb)
 		switch (rt->dst.error) {
 		case EHOSTUNREACH:
 			__IP_INC_STATS(net, IPSTATS_MIB_INADDRERRORS);
-			DROPDUMP_QUEUE_SKB(skb, NET_DROPDUMP_IPSTATS_MIB_INADDRERRORS);
 			break;
 
 		case ENETUNREACH:
 			__IP_INC_STATS(net, IPSTATS_MIB_INNOROUTES);
-			DROPDUMP_QUEUE_SKB(skb, NET_DROPDUMP_IPSTATS_MIB_INNOROUTES);
 			break;
 		}
 		goto out;
@@ -982,7 +980,6 @@ static int ip_error(struct sk_buff *skb)
 	case ENETUNREACH:
 		code = ICMP_NET_UNREACH;
 		__IP_INC_STATS(net, IPSTATS_MIB_INNOROUTES);
-		DROPDUMP_QUEUE_SKB(skb, NET_DROPDUMP_IPSTATS_MIB_INNOROUTES);
 		break;
 	case EACCES:
 		code = ICMP_PKT_FILTERED;
@@ -1318,10 +1315,6 @@ static void ip_del_fnhe(struct fib_nh *nh, __be32 daddr)
 		if (fnhe->fnhe_daddr == daddr) {
 			rcu_assign_pointer(*fnhe_p, rcu_dereference_protected(
 				fnhe->fnhe_next, lockdep_is_held(&fnhe_lock)));
-			/* set fnhe_daddr to 0 to ensure it won't bind with
-			 * new dsts in rt_bind_exception().
-			 */
-			fnhe->fnhe_daddr = 0;
 			fnhe_flush_routes(fnhe);
 			kfree_rcu(fnhe, rcu);
 			break;
@@ -2130,13 +2123,12 @@ int ip_route_input_rcu(struct sk_buff *skb, __be32 daddr, __be32 saddr,
 		int our = 0;
 		int err = -EINVAL;
 
-		if (!in_dev)
-			return err;
-		our = ip_check_mc_rcu(in_dev, daddr, saddr,
-				      ip_hdr(skb)->protocol);
+		if (in_dev)
+			our = ip_check_mc_rcu(in_dev, daddr, saddr,
+					      ip_hdr(skb)->protocol);
 
 		/* check l3 master if no match yet */
-		if (!our && netif_is_l3_slave(dev)) {
+		if ((!in_dev || !our) && netif_is_l3_slave(dev)) {
 			struct in_device *l3_in_dev;
 
 			l3_in_dev = __in_dev_get_rcu(skb->dev);

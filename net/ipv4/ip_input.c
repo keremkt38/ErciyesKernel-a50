@@ -223,8 +223,6 @@ static int ip_local_deliver_finish(struct net *net, struct sock *sk, struct sk_b
 			if (!raw) {
 				if (xfrm4_policy_check(NULL, XFRM_POLICY_IN, skb)) {
 					__IP_INC_STATS(net, IPSTATS_MIB_INUNKNOWNPROTOS);
-					DROPDUMP_QUEUE_SKB(skb, 
-						NET_DROPDUMP_IPSTATS_MIB_INUNKNOWNPROTOS);
 					icmp_send(skb, ICMP_DEST_UNREACH,
 						  ICMP_PROT_UNREACH, 0);
 				}
@@ -261,10 +259,11 @@ int ip_local_deliver(struct sk_buff *skb)
 		       ip_local_deliver_finish);
 }
 
-static inline bool ip_rcv_options(struct sk_buff *skb, struct net_device *dev)
+static inline bool ip_rcv_options(struct sk_buff *skb)
 {
 	struct ip_options *opt;
 	const struct iphdr *iph;
+	struct net_device *dev = skb->dev;
 
 	/* It looks as overkill, because not all
 	   IP options require packet mangling.
@@ -275,7 +274,6 @@ static inline bool ip_rcv_options(struct sk_buff *skb, struct net_device *dev)
 	*/
 	if (skb_cow(skb, skb_headroom(skb))) {
 		__IP_INC_STATS(dev_net(dev), IPSTATS_MIB_INDISCARDS);
-		DROPDUMP_QUEUE_SKB(skb, NET_DROPDUMP_IPSTATS_MIB_INDISCARDS);
 		goto drop;
 	}
 
@@ -285,7 +283,6 @@ static inline bool ip_rcv_options(struct sk_buff *skb, struct net_device *dev)
 
 	if (ip_options_compile(dev_net(dev), opt, skb)) {
 		__IP_INC_STATS(dev_net(dev), IPSTATS_MIB_INHDRERRORS);
-		DROPDUMP_QUEUE_SKB(skb, NET_DROPDUMP_IPSTATS_MIB_INHDRERRORS);
 		goto drop;
 	}
 
@@ -302,7 +299,7 @@ static inline bool ip_rcv_options(struct sk_buff *skb, struct net_device *dev)
 			}
 		}
 
-		if (ip_options_rcv_srr(skb, dev))
+		if (ip_options_rcv_srr(skb))
 			goto drop;
 	}
 
@@ -365,7 +362,7 @@ static int ip_rcv_finish(struct net *net, struct sock *sk, struct sk_buff *skb)
 	}
 #endif
 
-	if (iph->ihl > 5 && ip_rcv_options(skb, dev))
+	if (iph->ihl > 5 && ip_rcv_options(skb))
 		goto drop;
 
 	rt = skb_rtable(skb);
@@ -471,7 +468,6 @@ int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt, 
 	len = ntohs(iph->tot_len);
 	if (skb->len < len) {
 		__IP_INC_STATS(net, IPSTATS_MIB_INTRUNCATEDPKTS);
-		DROPDUMP_QUEUE_SKB(skb, NET_DROPDUMP_IPSTATS_MIB_INTRUNCATEDPKTS);
 		goto drop;
 	} else if (len < (iph->ihl*4))
 		goto inhdr_error;
@@ -482,7 +478,6 @@ int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt, 
 	 */
 	if (pskb_trim_rcsum(skb, len)) {
 		__IP_INC_STATS(net, IPSTATS_MIB_INDISCARDS);
-		DROPDUMP_QUEUE_SKB(skb, NET_DROPDUMP_IPSTATS_MIB_INDISCARDS);
 		goto drop;
 	}
 
@@ -502,10 +497,8 @@ int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt, 
 
 csum_error:
 	__IP_INC_STATS(net, IPSTATS_MIB_CSUMERRORS);
-	DROPDUMP_QUEUE_SKB(skb, NET_DROPDUMP_IPSTATS_MIB_CSUMERRORS);
 inhdr_error:
 	__IP_INC_STATS(net, IPSTATS_MIB_INHDRERRORS);
-	DROPDUMP_QUEUE_SKB(skb, NET_DROPDUMP_IPSTATS_MIB_INHDRERRORS);
 drop:
 	kfree_skb(skb);
 out:

@@ -25,6 +25,8 @@
 
 #include "bpf_jit_32.h"
 
+int bpf_jit_enable __read_mostly;
+
 /*
  * eBPF prog stack layout:
  *

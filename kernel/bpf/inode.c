@@ -368,42 +368,20 @@ out:
 	putname(pname);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(bpf_obj_get_user);
 
-static struct bpf_prog *__get_prog_inode(struct inode *inode, enum bpf_prog_type type)
+static void bpf_evict_inode(struct inode *inode)
 {
-	struct bpf_prog *prog;
-	int ret = inode_permission(inode, MAY_READ);
-	if (ret)
-		return ERR_PTR(ret);
+	enum bpf_type type;
 
-	if (inode->i_op == &bpf_map_iops)
-		return ERR_PTR(-EINVAL);
-	if (inode->i_op != &bpf_prog_iops)
-		return ERR_PTR(-EACCES);
+	truncate_inode_pages_final(&inode->i_data);
+	clear_inode(inode);
 
-	prog = inode->i_private;
-
-	ret = security_bpf_prog(prog);
-	if (ret < 0)
-		return ERR_PTR(ret);
-
-	return bpf_prog_inc(prog);
+	if (S_ISLNK(inode->i_mode))
+		kfree(inode->i_link);
+	if (!bpf_inode_type(inode, &type))
+		bpf_any_put(inode->i_private, type);
 }
-
-struct bpf_prog *bpf_prog_get_type_path(const char *name, enum bpf_prog_type type)
-{
-	struct bpf_prog *prog;
-	struct path path;
-	int ret = kern_path(name, LOOKUP_FOLLOW, &path);
-	if (ret)
-		return ERR_PTR(ret);
-	prog = __get_prog_inode(d_backing_inode(path.dentry), type);
-	if (!IS_ERR(prog))
-		touch_atime(&path);
-	path_put(&path);
-	return prog;
-}
-EXPORT_SYMBOL(bpf_prog_get_type_path);
 
 /*
  * Display the mount options in /proc/mounts.
@@ -417,28 +395,11 @@ static int bpf_show_options(struct seq_file *m, struct dentry *root)
 	return 0;
 }
 
-static void bpf_destroy_inode_deferred(struct rcu_head *head)
-{
-	struct inode *inode = container_of(head, struct inode, i_rcu);
-	enum bpf_type type;
-
-	if (S_ISLNK(inode->i_mode))
-		kfree(inode->i_link);
-	if (!bpf_inode_type(inode, &type))
-		bpf_any_put(inode->i_private, type);
-	free_inode_nonrcu(inode);
-}
-
-static void bpf_destroy_inode(struct inode *inode)
-{
-	call_rcu(&inode->i_rcu, bpf_destroy_inode_deferred);
-}
-
 static const struct super_operations bpf_super_ops = {
 	.statfs		= simple_statfs,
 	.drop_inode	= generic_delete_inode,
 	.show_options	= bpf_show_options,
-	.destroy_inode	= bpf_destroy_inode,
+	.evict_inode	= bpf_evict_inode,
 };
 
 enum {

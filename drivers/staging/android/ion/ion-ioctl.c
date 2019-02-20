@@ -20,17 +20,6 @@
 
 #include "ion.h"
 
-/*
- * ION_IOC_FREE and ion_handle_data is deprecated from ION after 4.14.
- * But it is used to study the version of ION by libion in Android.
- * Therefore, ion_ioctl() should not blaim if a user send ION_IOC_FREE.
- */
-struct ion_handle_data {
-	int handle;
-};
-
-#define ION_IOC_FREE	_IOWR(ION_IOC_MAGIC, 1, struct ion_handle_data)
-
 union ion_ioctl_arg {
 	struct ion_allocation_data allocation;
 	struct ion_heap_query query;
@@ -50,12 +39,7 @@ static int validate_ioctl_arg(unsigned int cmd, union ion_ioctl_arg *arg)
 		break;
 	}
 
-	if (ret) {
-		perrfn("reserved fields of query_data should be 0");
-		return -EINVAL;
-	}
-
-	return 0;
+	return ret ? -EINVAL : 0;
 }
 
 /* fix up the cases where the ioctl direction bits are incorrect */
@@ -75,10 +59,8 @@ long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	dir = ion_ioctl_dir(cmd);
 
-	if (_IOC_SIZE(cmd) > sizeof(data)) {
-		perrfn("unknown ioctl %#x", cmd);
+	if (_IOC_SIZE(cmd) > sizeof(data))
 		return -EINVAL;
-	}
 
 	/*
 	 * The copy_from_user is unconditional here for both read and write
@@ -116,8 +98,6 @@ long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		ret = ion_query_heaps(&data.query);
 		break;
 	default:
-		if (cmd != ION_IOC_FREE)
-			perrfn("unknown ioctl %#x", cmd);
 		return -ENOTTY;
 	}
 

@@ -306,10 +306,10 @@ static void blkdev_bio_end_io(struct bio *bio)
 	struct blkdev_dio *dio = bio->bi_private;
 	bool should_dirty = dio->should_dirty;
 
-	if (bio->bi_status && !dio->bio.bi_status)
-		dio->bio.bi_status = bio->bi_status;
-
-	if (!dio->multi_bio || atomic_dec_and_test(&dio->ref)) {
+	if (dio->multi_bio && !atomic_dec_and_test(&dio->ref)) {
+		if (bio->bi_status && !dio->bio.bi_status)
+			dio->bio.bi_status = bio->bi_status;
+	} else {
 		if (!dio->is_sync) {
 			struct kiocb *iocb = dio->iocb;
 			ssize_t ret;
@@ -1439,8 +1439,10 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 	 */
 	if (!for_part) {
 		ret = devcgroup_inode_permission(bdev->bd_inode, perm);
-		if (ret != 0)
+		if (ret != 0) {
+			bdput(bdev);
 			return ret;
+		}
 	}
 
  restart:
@@ -1513,10 +1515,8 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 				goto out_clear;
 			BUG_ON(for_part);
 			ret = __blkdev_get(whole, mode, 1);
-			if (ret) {
-				bdput(whole);
+			if (ret)
 				goto out_clear;
-			}
 			bdev->bd_contains = whole;
 			bdev->bd_part = disk_get_part(disk, partno);
 			if (!(disk->flags & GENHD_FL_UP) ||
@@ -1570,6 +1570,7 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 	put_disk(disk);
 	module_put(owner);
  out:
+	bdput(bdev);
 
 	return ret;
 }
@@ -1654,9 +1655,6 @@ int blkdev_get(struct block_device *bdev, fmode_t mode, void *holder)
 		mutex_unlock(&bdev->bd_mutex);
 		bdput(whole);
 	}
-
-	if (res)
-		bdput(bdev);
 
 	return res;
 }

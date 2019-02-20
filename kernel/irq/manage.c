@@ -20,7 +20,6 @@
 #include <linux/sched/task.h>
 #include <uapi/linux/sched/types.h>
 #include <linux/task_work.h>
-#include <linux/sec_debug.h>
 
 #include "internals.h"
 
@@ -103,8 +102,6 @@ void synchronize_irq(unsigned int irq)
 	struct irq_desc *desc = irq_to_desc(irq);
 
 	if (desc) {
-		sec_debug_set_task_in_sync_irq((uint64_t)current, irq, (desc && desc->action) ? desc->action->name : NULL, desc);
-
 		__synchronize_hardirq(desc);
 		/*
 		 * We made sure that no hardirq handler is
@@ -112,9 +109,7 @@ void synchronize_irq(unsigned int irq)
 		 * active.
 		 */
 		wait_event(desc->wait_for_threads,
-				!atomic_read(&desc->threads_active));
-
-		sec_debug_set_task_in_sync_irq(0, 0, 0, 0);
+			   !atomic_read(&desc->threads_active));
 	}
 }
 EXPORT_SYMBOL(synchronize_irq);
@@ -365,9 +360,6 @@ int irq_setup_affinity(struct irq_desc *desc)
 	}
 
 	cpumask_and(&mask, cpu_online_mask, set);
-	if (cpumask_empty(&mask))
-		cpumask_copy(&mask, cpu_online_mask);
-
 	if (node != NUMA_NO_NODE) {
 		const struct cpumask *nodemask = cpumask_of_node(node);
 
@@ -1390,9 +1382,6 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 			irqd_set(&desc->irq_data, IRQD_NO_BALANCING);
 		}
 
-		if (new->flags & IRQF_GIC_MULTI_TARGET)
-			irqd_set(&desc->irq_data, IRQD_GIC_MULTI_TARGET);
-
 		if (irq_settings_can_autoenable(desc)) {
 			irq_startup(desc, IRQ_RESEND, IRQ_START_COND);
 		} else {
@@ -1406,6 +1395,7 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 			/* Undo nested disables: */
 			desc->depth = 1;
 		}
+
 	} else if (new->flags & IRQF_TRIGGER_MASK) {
 		unsigned int nmsk = new->flags & IRQF_TRIGGER_MASK;
 		unsigned int omsk = irqd_get_trigger_type(&desc->irq_data);

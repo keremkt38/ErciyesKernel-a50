@@ -38,9 +38,6 @@
 #include <linux/atomic.h>
 #include <linux/prefetch.h>
 
-#define __FS_HAS_ENCRYPTION IS_ENABLED(CONFIG_FS_ENCRYPTION)
-#include <linux/fscrypt.h>
-
 /*
  * How many user pages to map in one call to get_user_pages().  This determines
  * the size of a structure in the slab cache
@@ -451,17 +448,6 @@ static inline void dio_bio_submit(struct dio *dio, struct dio_submit *sdio)
 	dio->refcount++;
 	spin_unlock_irqrestore(&dio->bio_lock, flags);
 
-#if defined(CONFIG_FS_INLINE_ENCRYPTION)
-	if (fscrypt_inline_encrypted(dio->inode)) {
-		fscrypt_set_bio_cryptd_dun(dio->inode, bio,
-				fscrypt_get_dun(dio->inode,
-				(sdio->logical_offset_in_bio >> PAGE_SHIFT)));
-#if defined(CONFIG_CRYPTO_DISKCIPHER_DEBUG)
-		crypto_diskcipher_debug(FS_DIO, bio->bi_opf);
-#endif
-	}
-#endif
-
 	if (dio->is_async && dio->op == REQ_OP_READ && dio->should_dirty)
 		bio_set_pages_dirty(bio);
 
@@ -672,7 +658,6 @@ static int get_more_blocks(struct dio *dio, struct dio_submit *sdio,
 	unsigned long fs_count;	/* Number of filesystem-sized blocks */
 	int create;
 	unsigned int i_blkbits = sdio->blkbits + sdio->blkfactor;
-	loff_t i_size;
 
 	/*
 	 * If there was a memory error and we've overwritten all the
@@ -702,8 +687,8 @@ static int get_more_blocks(struct dio *dio, struct dio_submit *sdio,
 		 */
 		create = dio->op == REQ_OP_WRITE;
 		if (dio->flags & DIO_SKIP_HOLES) {
-			i_size = i_size_read(dio->inode);
-			if (i_size && fs_startblk <= (i_size - 1) >> i_blkbits)
+			if (fs_startblk <= ((i_size_read(dio->inode) - 1) >>
+							i_blkbits))
 				create = 0;
 		}
 

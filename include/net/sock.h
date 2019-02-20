@@ -72,10 +72,6 @@
 #include <net/tcp_states.h>
 #include <linux/net_tstamp.h>
 #include <net/smc.h>
-// SEC_PRODUCT_FEATURE_KNOX_SUPPORT_NPA {
-#define NAP_PROCESS_NAME_LEN	128
-#define NAP_DOMAIN_NAME_LEN	255
-// SEC_PRODUCT_FEATURE_KNOX_SUPPORT_NPA }
 
 /*
  * This structure really needs to be cleaned up.
@@ -476,18 +472,6 @@ struct sock {
 #endif
 	struct sock_cgroup_data	sk_cgrp_data;
 	struct mem_cgroup	*sk_memcg;
-	// SEC_PRODUCT_FEATURE_KNOX_SUPPORT_NPA {
-	uid_t			knox_uid;
-	pid_t			knox_pid;
-	uid_t			knox_dns_uid;
-	char 			domain_name[NAP_DOMAIN_NAME_LEN];
-	char			process_name[NAP_PROCESS_NAME_LEN];
-	uid_t			knox_puid;
-	pid_t			knox_ppid;
-	char			parent_process_name[NAP_PROCESS_NAME_LEN];
-	pid_t			knox_dns_pid;
-	char 			dns_process_name[NAP_PROCESS_NAME_LEN];
-	// SEC_PRODUCT_FEATURE_KNOX_SUPPORT_NPA }
 	void			(*sk_state_change)(struct sock *sk);
 	void			(*sk_data_ready)(struct sock *sk);
 	void			(*sk_write_space)(struct sock *sk);
@@ -696,12 +680,6 @@ static inline void sk_add_node_rcu(struct sock *sk, struct hlist_head *list)
 		hlist_add_tail_rcu(&sk->sk_node, list);
 	else
 		hlist_add_head_rcu(&sk->sk_node, list);
-}
-
-static inline void sk_add_node_tail_rcu(struct sock *sk, struct hlist_head *list)
-{
-	sock_hold(sk);
-	hlist_add_tail_rcu(&sk->sk_node, list);
 }
 
 static inline void __sk_nulls_add_node_rcu(struct sock *sk, struct hlist_nulls_head *list)

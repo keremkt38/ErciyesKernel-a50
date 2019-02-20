@@ -18,7 +18,6 @@
 #include <linux/sched/wake_q.h>
 #include <linux/sched/debug.h>
 #include <linux/osq_lock.h>
-#include <linux/sec_debug.h>
 
 #include "rwsem.h"
 
@@ -90,9 +89,6 @@ void __init_rwsem(struct rw_semaphore *sem, const char *name,
 #ifdef CONFIG_RWSEM_SPIN_ON_OWNER
 	sem->owner = NULL;
 	osq_lock_init(&sem->osq);
-#endif
-#ifdef CONFIG_FAST_TRACK
-	sem->ftt_dep_task = NULL;
 #endif
 }
 
@@ -202,22 +198,15 @@ static void __rwsem_mark_wake(struct rw_semaphore *sem,
 		woken++;
 		tsk = waiter->task;
 
-		get_task_struct(tsk);
+		wake_q_add(wake_q, tsk);
 		list_del(&waiter->list);
 		/*
-		 * Ensure calling get_task_struct() before setting the reader
+		 * Ensure that the last operation is setting the reader
 		 * waiter to nil such that rwsem_down_read_failed() cannot
 		 * race with do_exit() by always holding a reference count
 		 * to the task to wakeup.
 		 */
 		smp_store_release(&waiter->task, NULL);
-		/*
-		 * Ensure issuing the wakeup (either by us or someone else)
-		 * after setting the reader waiter to nil.
-		 */
-		wake_q_add(wake_q, tsk);
-		/* wake_q_add() already take the task ref */
-		put_task_struct(tsk);
 	}
 
 	adjustment = woken * RWSEM_ACTIVE_READ_BIAS - adjustment;
@@ -262,15 +251,10 @@ __rwsem_down_read_failed_common(struct rw_semaphore *sem, int state)
 	     adjustment != -RWSEM_ACTIVE_READ_BIAS))
 		__rwsem_mark_wake(sem, RWSEM_WAKE_ANY, &wake_q);
 
-#ifdef CONFIG_FAST_TRACK
-	rwsem_dynamic_ftt_enqueue(current, waiter.task, READ_ONCE(sem->owner), sem);
-#endif
-
 	raw_spin_unlock_irq(&sem->wait_lock);
 	wake_up_q(&wake_q);
 
 	/* wait to be given the lock */
-	sec_debug_wtsk_set_data(DTYPE_RWSEM, (void *)sem);
 	while (true) {
 		set_current_state(state);
 		if (!waiter.task)
@@ -286,7 +270,6 @@ __rwsem_down_read_failed_common(struct rw_semaphore *sem, int state)
 	}
 
 	__set_current_state(TASK_RUNNING);
-	sec_debug_wtsk_clear_data();
 	return sem;
 out_nolock:
 	list_del(&waiter.list);
@@ -294,7 +277,6 @@ out_nolock:
 		atomic_long_add(-RWSEM_WAITING_BIAS, &sem->count);
 	raw_spin_unlock_irq(&sem->wait_lock);
 	__set_current_state(TASK_RUNNING);
-	sec_debug_wtsk_clear_data();
 	return ERR_PTR(-EINTR);
 }
 
@@ -568,12 +550,7 @@ __rwsem_down_write_failed_common(struct rw_semaphore *sem, int state)
 	} else
 		count = atomic_long_add_return(RWSEM_WAITING_BIAS, &sem->count);
 
-#ifdef CONFIG_FAST_TRACK
-	rwsem_dynamic_ftt_enqueue(waiter.task, current, READ_ONCE(sem->owner), sem);
-#endif
-
 	/* wait until we successfully acquire the lock */
-	sec_debug_wtsk_set_data(DTYPE_RWSEM, (void *)sem);
 	set_current_state(state);
 	while (true) {
 		if (rwsem_try_write_lock(count, sem))
@@ -592,7 +569,6 @@ __rwsem_down_write_failed_common(struct rw_semaphore *sem, int state)
 		raw_spin_lock_irq(&sem->wait_lock);
 	}
 	__set_current_state(TASK_RUNNING);
-	sec_debug_wtsk_clear_data();
 	list_del(&waiter.list);
 	raw_spin_unlock_irq(&sem->wait_lock);
 
@@ -600,7 +576,6 @@ __rwsem_down_write_failed_common(struct rw_semaphore *sem, int state)
 
 out_nolock:
 	__set_current_state(TASK_RUNNING);
-	sec_debug_wtsk_clear_data();
 	raw_spin_lock_irq(&sem->wait_lock);
 	list_del(&waiter.list);
 	if (list_empty(&sem->wait_list))
@@ -699,10 +674,6 @@ locked:
 
 	if (!list_empty(&sem->wait_list))
 		__rwsem_mark_wake(sem, RWSEM_WAKE_ANY, &wake_q);
-
-#ifdef CONFIG_FAST_TRACK
-	rwsem_dynamic_ftt_dequeue(sem, current);
-#endif
 
 	raw_spin_unlock_irqrestore(&sem->wait_lock, flags);
 	wake_up_q(&wake_q);

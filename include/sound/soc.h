@@ -1044,7 +1044,7 @@ struct snd_soc_dai_link {
 
 	/* optional hw_params re-writing for BE and FE sync */
 	int (*be_hw_params_fixup)(struct snd_soc_pcm_runtime *rtd,
-			struct snd_pcm_hw_params *params, int stream);
+			struct snd_pcm_hw_params *params);
 
 	/* machine stream operations */
 	const struct snd_soc_ops *ops;

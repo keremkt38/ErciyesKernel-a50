@@ -24,10 +24,6 @@
 #include "fsmap.h"
 #include <trace/events/ext4.h>
 
-#ifdef CONFIG_FSCRYPT_SDP
-#include <linux/fscrypto_sdp_ioctl.h>
-#endif
-
 /**
  * Swap memory between @a and @b for @len bytes.
  *
@@ -65,7 +61,6 @@ static void swap_inode_data(struct inode *inode1, struct inode *inode2)
 	loff_t isize;
 	struct ext4_inode_info *ei1;
 	struct ext4_inode_info *ei2;
-	unsigned long tmp;
 
 	ei1 = EXT4_I(inode1);
 	ei2 = EXT4_I(inode2);
@@ -78,10 +73,7 @@ static void swap_inode_data(struct inode *inode1, struct inode *inode2)
 	swap(inode1->i_mtime, inode2->i_mtime);
 
 	memswap(ei1->i_data, ei2->i_data, sizeof(ei1->i_data));
-	tmp = ei1->i_flags & EXT4_FL_SHOULD_SWAP;
-	ei1->i_flags = (ei2->i_flags & EXT4_FL_SHOULD_SWAP) |
-		(ei1->i_flags & ~EXT4_FL_SHOULD_SWAP);
-	ei2->i_flags = tmp | (ei2->i_flags & ~EXT4_FL_SHOULD_SWAP);
+	swap(ei1->i_flags, ei2->i_flags);
 	swap(ei1->i_disksize, ei2->i_disksize);
 	ext4_es_remove_extent(inode1, 0, EXT_MAX_BLOCKS);
 	ext4_es_remove_extent(inode2, 0, EXT_MAX_BLOCKS);
@@ -944,13 +936,6 @@ resizefs_out:
 		if (!blk_queue_discard(q))
 			return -EOPNOTSUPP;
 
-		/*
-		 * We haven't replayed the journal, so we cannot use our
-		 * block-bitmap-guided storage zapping commands.
-		 */
-		if (test_opt(sb, NOLOAD) && ext4_has_feature_journal(sb))
-			return -EROFS;
-
 		if (copy_from_user(&range, (struct fstrim_range __user *)arg,
 		    sizeof(range)))
 			return -EFAULT;
@@ -1076,22 +1061,6 @@ out:
 	}
 	case EXT4_IOC_SHUTDOWN:
 		return ext4_shutdown(sb, arg);
-
-#ifdef CONFIG_DDAR
-	case EXT4_IOC_GET_DD_POLICY:
-	case EXT4_IOC_SET_DD_POLICY:
-		return fscrypt_dd_ioctl(cmd, &arg, inode);
-#endif
-#ifdef CONFIG_FSCRYPT_SDP
-	case FS_IOC_GET_SDP_INFO:
-	case FS_IOC_SET_SDP_POLICY:
-	case FS_IOC_SET_SENSITIVE:
-	case FS_IOC_SET_PROTECTED:
-	case FS_IOC_ADD_CHAMBER:
-	case FS_IOC_REMOVE_CHAMBER:
-		return fscrypt_sdp_ioctl(filp, cmd, arg);
-#endif
-
 	default:
 		return -ENOTTY;
 	}
@@ -1160,14 +1129,6 @@ long ext4_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case EXT4_IOC_GET_ENCRYPTION_POLICY:
 	case EXT4_IOC_SHUTDOWN:
 	case FS_IOC_GETFSMAP:
-#ifdef CONFIG_FSCRYPT_SDP
-	case FS_IOC_GET_SDP_INFO:
-	case FS_IOC_SET_SDP_POLICY:
-	case FS_IOC_SET_SENSITIVE:
-	case FS_IOC_SET_PROTECTED:
-	case FS_IOC_ADD_CHAMBER:
-	case FS_IOC_REMOVE_CHAMBER:
-#endif
 		break;
 	default:
 		return -ENOIOCTLCMD;

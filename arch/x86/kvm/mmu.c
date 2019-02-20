@@ -5418,30 +5418,13 @@ static bool kvm_has_zapped_obsolete_pages(struct kvm *kvm)
 	return unlikely(!list_empty_careful(&kvm->arch.zapped_obsolete_pages));
 }
 
-void kvm_mmu_invalidate_mmio_sptes(struct kvm *kvm, u64 gen)
+void kvm_mmu_invalidate_mmio_sptes(struct kvm *kvm, struct kvm_memslots *slots)
 {
-	gen &= MMIO_GEN_MASK;
-
 	/*
-	 * Shift to eliminate the "update in-progress" flag, which isn't
-	 * included in the spte's generation number.
-	 */
-	gen >>= 1;
-
-	/*
-	 * Generation numbers are incremented in multiples of the number of
-	 * address spaces in order to provide unique generations across all
-	 * address spaces.  Strip what is effectively the address space
-	 * modifier prior to checking for a wrap of the MMIO generation so
-	 * that a wrap in any address space is detected.
-	 */
-	gen &= ~((u64)KVM_ADDRESS_SPACE_NUM - 1);
-
-	/*
-	 * The very rare case: if the MMIO generation number has wrapped,
+	 * The very rare case: if the generation-number is round,
 	 * zap all shadow pages.
 	 */
-	if (unlikely(gen == 0)) {
+	if (unlikely((slots->generation & MMIO_GEN_MASK) == 0)) {
 		kvm_debug_ratelimited("kvm: zapping shadow pages for mmio generation wraparound\n");
 		kvm_mmu_invalidate_zap_all_pages(kvm);
 	}

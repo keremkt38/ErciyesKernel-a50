@@ -23,24 +23,14 @@
 #include <linux/slab.h>
 #include <linux/swap.h>
 
-#include <asm/cacheflush.h>
-
 #include "ion.h"
 
-static void *ion_page_pool_alloc_pages(struct ion_page_pool *pool, bool nozero)
+static void *ion_page_pool_alloc_pages(struct ion_page_pool *pool)
 {
-	gfp_t gfpmask = pool->gfp_mask;
-	struct page *page;
+	struct page *page = alloc_pages(pool->gfp_mask, pool->order);
 
-	if (nozero)
-		gfpmask &= ~__GFP_ZERO;
-
-	page = alloc_pages(gfpmask, pool->order);
-	if (!page) {
-		if (pool->order == 0)
-			perrfn("failed to alloc order-0 page (gfp %pGg)", &gfpmask);
+	if (!page)
 		return NULL;
-	}
 	return page;
 }
 
@@ -82,7 +72,7 @@ static struct page *ion_page_pool_remove(struct ion_page_pool *pool, bool high)
 	return page;
 }
 
-struct page *ion_page_pool_alloc(struct ion_page_pool *pool, bool nozero)
+struct page *ion_page_pool_alloc(struct ion_page_pool *pool)
 {
 	struct page *page = NULL;
 
@@ -95,12 +85,8 @@ struct page *ion_page_pool_alloc(struct ion_page_pool *pool, bool nozero)
 		page = ion_page_pool_remove(pool, false);
 	mutex_unlock(&pool->mutex);
 
-	if (!page) {
-		page = ion_page_pool_alloc_pages(pool, nozero);
-		if (page && !pool->cached)
-			__flush_dcache_area(page_to_virt(page),
-					    1 << (PAGE_SHIFT + pool->order));
-	}
+	if (!page)
+		page = ion_page_pool_alloc_pages(pool);
 
 	return page;
 }
@@ -175,7 +161,8 @@ struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order,
 	pool->order = order;
 	mutex_init(&pool->mutex);
 	plist_node_init(&pool->list, order);
-	pool->cached = cached;
+	if (cached)
+		pool->cached = true;
 
 	return pool;
 }

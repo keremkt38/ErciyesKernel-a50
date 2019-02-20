@@ -29,9 +29,6 @@
 #define NETLINK_RDMA		20
 #define NETLINK_CRYPTO		21	/* Crypto layer */
 #define NETLINK_SMC		22	/* SMC monitoring */
-#ifdef CONFIG_SAMSUNG_FREECESS
-#define NETLINK_KFREECESS       27
-#endif
 
 #define NETLINK_INET_DIAG	NETLINK_SOCK_DIAG
 

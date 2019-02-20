@@ -247,8 +247,10 @@ static bool remove_migration_pte(struct page *page, struct vm_area_struct *vma,
 				pte = swp_entry_to_pte(entry);
 			} else if (is_device_public_page(new)) {
 				pte = pte_mkdevmap(pte);
+				flush_dcache_page(new);
 			}
-		}
+		} else
+			flush_dcache_page(new);
 
 #ifdef CONFIG_HUGETLB_PAGE
 		if (PageHuge(new)) {
@@ -969,13 +971,6 @@ static int move_to_new_page(struct page *newpage, struct page *page,
 		 */
 		if (!PageMappingFlags(page))
 			page->mapping = NULL;
-
-		if (unlikely(is_zone_device_page(newpage))) {
-			if (is_device_public_page(newpage))
-				flush_dcache_page(newpage);
-		} else
-			flush_dcache_page(newpage);
-
 	}
 out:
 	return rc;
@@ -1308,16 +1303,6 @@ static int unmap_and_move_huge_page(new_page_t get_new_page,
 		lock_page(hpage);
 	}
 
-	/*
-	 * Check for pages which are in the process of being freed.  Without
-	 * page_mapping() set, hugetlbfs specific move page routine will not
-	 * be called and we could leak usage counts for subpools.
-	 */
-	if (page_private(hpage) && !page_mapping(hpage)) {
-		rc = -EBUSY;
-		goto out_unlock;
-	}
-
 	if (PageAnon(hpage))
 		anon_vma = page_get_anon_vma(hpage);
 
@@ -1349,7 +1334,6 @@ put_anon:
 		set_page_owner_migrate_reason(new_hpage, reason);
 	}
 
-out_unlock:
 	unlock_page(hpage);
 out:
 	if (rc != -EAGAIN)
@@ -1427,17 +1411,6 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 				rc = unmap_and_move(get_new_page, put_new_page,
 						private, page, pass > 2, mode,
 						reason);
-
-			if ((reason == MR_CMA) && (rc != -EAGAIN) &&
-						(rc != MIGRATEPAGE_SUCCESS)) {
-				phys_addr_t pa = page_to_phys(page);
-
-				pr_err("%s failed(%d): PA%pa,mapcnt%d,cnt%d\n",
-					__func__, rc, &pa,
-					page_mapcount(page), page_count(page));
-
-				dump_page_owner(page);
-			}
 
 			switch(rc) {
 			case -ENOMEM:

@@ -1640,8 +1640,7 @@ __vma_matches(struct vm_area_struct *vma, struct file *filp,
 	if (vma->vm_file != filp)
 		return false;
 
-	return vma->vm_start == addr &&
-	       (vma->vm_end - vma->vm_start) == PAGE_ALIGN(size);
+	return vma->vm_start == addr && (vma->vm_end - vma->vm_start) == size;
 }
 
 /**
